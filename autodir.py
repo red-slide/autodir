@@ -1,25 +1,11 @@
 import itertools
 import sys
-import os
-import fcntl
-import termios
-import struct
 import requests
+from python.autodir.modules.get_dash import *
 
 # List to store URLs that return status code 200
 found_links = []
 
-def get_terminal_size():
-    try:
-        fd = os.open('/dev/tty', os.O_RDONLY)
-        
-        size = struct.unpack('HH', fcntl.ioctl(fd, termios.TIOCGWINSZ, b'\0' * 4))
-        os.close(fd)
-        
-        return "-" * (size[1] - 5)
-    except Exception as e:
-        print("-" * 10)
-        
 def generate_and_test_words(min_length, max_length, charset, base_url):
     # ensures the base URL has a scheme (http or https)
     if not base_url.startswith('http://') and not base_url.startswith('https://'):
@@ -68,7 +54,7 @@ def generate_and_test_words(min_length, max_length, charset, base_url):
 
     # Display the final list of URLs found and the final progress
     sys.stdout.write("\033[K")
-    print(get_terminal_size()+"\nFinished processing all words.")
+    print(get_dash()+"\nFinished processing all words.")
     print("True Links Found:")
     for link in found_links:
         print(link)
@@ -92,7 +78,7 @@ def main():
             print("Charset is required.")
             return
 
-        print(get_terminal_size())
+        print(get_dash())
 
         # validates the size of the charset
         if min_length < 1 or max_length < min_length:
@@ -104,7 +90,7 @@ def main():
 
     except KeyboardInterrupt:
         # Catch the keyboardinterrupt and provide a friendly message
-        print(get_terminal_size() + "\nProcess interrupted by user.\n")
+        print(get_dash() + "\nProcess interrupted by user.\n")
 
         if len(found_links) > 0:
             print("True Links Found:")
