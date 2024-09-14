@@ -1,8 +1,5 @@
-# Asynchronous function to make an HTTP request with a timeout
-import asyncio
-
-async def get_request(word, session, semaphore):
-    url = f"http://www.google.com/{word}"
+async def get_request(word, parsed_url, session, semaphore):
+    url = parsed_url+word
     # Limits the number of simultaneous requests
     async with semaphore:
         try:

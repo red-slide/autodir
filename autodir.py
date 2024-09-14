@@ -4,16 +4,19 @@ import time
 import sys
 
 from modules.get_art import get_art
+from modules.get_url import get_url
 from modules.get_charset import get_charset
 from modules.get_range import get_range
 from modules.get_dash import get_dash
 from modules.get_word import get_word
 from modules.get_request import get_request
 
+
 async def main() -> None:
     try:
         # Obtain and prepare the necessary data
         await get_art()
+        parsed_url = await get_url()
         charset = await get_charset()
         length_range = await get_range()
         await get_dash()
@@ -43,7 +46,7 @@ async def main() -> None:
 
                     # Create a task for the request and add it to the list
                     semaphore = asyncio.Semaphore(request_number)
-                    task = asyncio.create_task(get_request(current_word, session, semaphore))
+                    task = asyncio.create_task(get_request(current_word, parsed_url, session, semaphore))
                     tasks.append(task)
 
                     # Remove completed tasks and add new ones while there is space
