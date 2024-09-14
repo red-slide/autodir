@@ -1,102 +1,98 @@
-import itertools
+import asyncio
+import aiohttp
+import time
 import sys
-import requests
-from python.autodir.modules.get_dash import *
 
-# List to store URLs that return status code 200
-found_links = []
+from modules.get_art import get_art
+from modules.get_charset import get_charset
+from modules.get_range import get_range
+from modules.get_dash import get_dash
+from modules.get_word import get_word
+from modules.get_request import get_request
 
-def generate_and_test_words(min_length, max_length, charset, base_url):
-    # ensures the base URL has a scheme (http or https)
-    if not base_url.startswith('http://') and not base_url.startswith('https://'):
-        base_url = 'http://' + base_url  # adds http:// if scheme is missing
-
-    total_words = sum(len(charset) ** length for length in range(min_length, max_length + 1))
-    words_processed = 0
-
-    # show found URLs
-    found_links_line = []
-
-    for length in range(min_length, max_length + 1):
-        for word in itertools.product(charset, repeat=length):
-            current_word = ''.join(word)
-            url = f"{base_url}/{current_word}"
-
-            # Update the progress line in the terminal
-            sys.stdout.write("\033[K")
-            sys.stdout.write(f"Testing: {url} ({words_processed + 1}/{total_words})\n")
-            sys.stdout.write("\033[F" * (len(found_links_line) + 1))
-
-            # Update the list of found URLs
-            for link in found_links_line:
-                sys.stdout.write(f"{link}\033[K\n")
-
-            sys.stdout.flush()
-
-            try:
-                response = requests.get(url)
-                status_code = response.status_code
-
-                if status_code == 200:
-                    found_links.append(f"Found 200 OK: {url}")
-                    found_links_line = found_links.copy()
-                    sys.stdout.write("\033[K")
-                    sys.stdout.write(f"Testing: {url} ({words_processed + 1}/{total_words})\n")
-                    sys.stdout.flush()
-
-            except requests.RequestException as e:
-                # Displays request errors silently on the same progress line
-                sys.stdout.write("\033[K")
-                sys.stdout.write(f"Error requesting {url}: {e}\n")
-                sys.stdout.flush()
-
-            words_processed += 1
-
-    # Display the final list of URLs found and the final progress
-    sys.stdout.write("\033[K")
-    print(get_dash()+"\nFinished processing all words.")
-    print("True Links Found:")
-    for link in found_links:
-        print(link)
-
-def main():
+async def main() -> None:
     try:
-        os.system('clear')
-        print("""    _         _          ____  _      
-   / \  _   _| |_ ___   |  _ \(_)_ __ 
-  / _ \| | | | __/ _ \  | | | | | '__|
- / ___ \ |_| | || (_) | | |_| | | |   
-/_/   \_\__,_|\__\___/  |____/|_|_| \n""")
-
-        base_url = input("Enter the base URL (e.g., http://example.com): ").strip()
-        min_length = int(input("Minimum length of the character set: ").strip())
-        max_length = int(input("Maximum length of the character set: ").strip())
-        charset = input("Enter the charset (e.g., abc123): ").strip()
-
-        # Check if charset is provided
-        if not charset:
-            print("Charset is required.")
-            return
-
-        print(get_dash())
-
-        # validates the size of the charset
-        if min_length < 1 or max_length < min_length:
-            print("Invalid length values.")
-            return
-
-        print("Starting word generation and testing...")
-        generate_and_test_words(min_length, max_length, charset, base_url)
-
+        # Obtain and prepare the necessary data
+        await get_art()
+        charset = await get_charset()
+        length_range = await get_range()
+        await get_dash()
     except KeyboardInterrupt:
-        # Catch the keyboardinterrupt and provide a friendly message
-        print(get_dash() + "\nProcess interrupted by user.\n")
+        print('\r\033[2K\033[36mYou finished the program!\033[0m')
+        sys.exit()
 
-        if len(found_links) > 0:
-            print("True Links Found:")
-            for link in found_links:
-                print(link)
+    total_words = len(charset) ** length_range[1]
+    last_word = None
+    words_processed = 0  # Start at 0 to count correctly
 
-if __name__ == "__main__":
-    main()
+    # Limit the number of simultaneous requests
+    request_number = 20
 
+    tasks = []  # List to store pending tasks
+    found_urls = []  # List to store found URLs
+    start_time = time.time() # start time
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            print("\n\033[44m * START TESTS * \033[0m\n")
+            while words_processed < total_words:
+                try:
+                    # Calculate the next word to be tested
+                    current_word = await get_word(charset, length_range, last_word)
+                    last_word = current_word
+
+                    # Create a task for the request and add it to the list
+                    semaphore = asyncio.Semaphore(request_number)
+                    task = asyncio.create_task(get_request(current_word, session, semaphore))
+                    tasks.append(task)
+
+                    # Remove completed tasks and add new ones while there is space
+                    while len(tasks) >= request_number:
+                        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                        tasks = list(pending)  # Update the list of pending tasks
+
+                        # Update progress for each completed task
+                        for task in done:
+                            result = await task
+                            if result:
+                                found_urls.append(result)
+
+                    # Update the total progress
+                    words_processed += 1
+                    print(f'\r\033[2K\033[36m[+]\033[0m tested words: ({words_processed}/{total_words})', end='')
+
+                except asyncio.CancelledError:
+                    # Handle cancellation gracefully
+                    print("\n\033[41m * Task was cancelled! * \033[0m")
+                    break
+
+            # Wait for any remaining tasks to finish
+            if tasks:
+                done, _ = await asyncio.wait(tasks)
+                for task in done:
+                    result = await task
+                    if result:
+                        found_urls.append(result)
+
+            print(f'\r\033[2K\033[36m[+]\033[0m tested words: ({words_processed}/{total_words})')
+
+    except Exception as e:
+        print(f"\n\033[31mUnexpected error: {e}\033[0m")
+
+    finally:
+        await get_dash()
+        # Show time and all found URLs
+        end_time = time.time()
+        duration = end_time - start_time
+        print(f"\n\033[40m TOTAL TIME: {duration:.2f}s \033[0m")
+
+        if found_urls:
+            print("\033[44m * ALL FOUND URLs * \033[0m\n")
+            for url in found_urls:
+                print(f'\033[36m[+]\033[0m {url}')
+        else:
+            print("\033[31mNo URLs were found.\033[0m")
+
+
+# Execute the program
+asyncio.run(main())
