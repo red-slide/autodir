@@ -22,7 +22,7 @@ Ensure you have **Python 3.11.9** installed on your machine.
 1. **Clone the repository**:
 
    ```bash
-   git clone https://github.com/yourusername/autodir.git
+   git clone https://github.com/redseverity/autodir.git
    cd autodir
 
 2. **Install dependencies**:
